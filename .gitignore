@@ -1,0 +1,16 @@
+# Wallet data — NEVER commit private keys
+wallets.json
+wallets.export.json
+*.export.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
