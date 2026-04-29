@@ -165,9 +165,6 @@ class SolanaWalletManager:
     # Balances
     # ------------------------------------------------------------------
 
-    def get_balance(self, pubkey_str: str) -> float:
-        """Return SOL balance for a public key. Returns 0.0 on error."""
-        try:
     def get_balance(self, pubkey_str: str, retries: int = 3) -> float:
         """
         Return SOL balance for a public key.
