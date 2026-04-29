@@ -46,9 +46,25 @@ except ImportError:
 # ==================== CONFIGURATION ====================
 
 WALLETS_FILE = Path(__file__).parent / "wallets.json"
+CONFIG_FILE  = Path(__file__).parent / "config.json"
 
-# Mainnet -- real network. For testing use: https://api.devnet.solana.com
-RPC_URL = "https://api.mainnet-beta.solana.com"
+# RPC URL is loaded from config.json (never hardcoded here).
+# Create config.json in the project folder:
+#   { "rpc_url": "https://mainnet.helius-rpc.com/?api-key=YOUR_KEY" }
+_DEFAULT_RPC = "https://api.mainnet-beta.solana.com"
+
+def _load_rpc_url() -> str:
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            url = data.get("rpc_url", "").strip()
+            if url:
+                return url
+        except Exception:
+            pass
+    return _DEFAULT_RPC
+
+RPC_URL = _load_rpc_url()
 
 # Compute Budget program ID (constant, will never change)
 COMPUTE_BUDGET_PROGRAM_ID = Pubkey.from_string("ComputeBudget111111111111111111111111111111")

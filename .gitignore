@@ -1,3 +1,6 @@
+# Private config — contains API keys, NEVER commit
+config.json
+
 # Wallet data — NEVER commit private keys
 wallets.json
 wallets.export.json

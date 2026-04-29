@@ -81,6 +81,28 @@ pip install solana solders base58
 
 ---
 
+## Custom RPC (recommended)
+
+By default the tool uses the public Solana mainnet RPC (`api.mainnet-beta.solana.com`), which is rate-limited and may return stale balances.
+
+To use your own RPC (Helius, QuickNode, Alchemy, etc.), create a **`config.json`** file in the project folder:
+
+```json
+{
+  "rpc_url": "https://mainnet.helius-rpc.com/?api-key=YOUR_API_KEY"
+}
+```
+
+`config.json` is listed in `.gitignore` and will **never be committed** — your API key stays local.
+
+You can also switch the RPC at runtime without editing any file:
+```
+solana> rpc https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
+```
+Or via the AI agent: *"Switch to RPC https://..."*
+
+---
+
 ## Usage
 
 ### Interactive mode 
