@@ -19,8 +19,11 @@ Commands:
   quit                         -- exit
 """
 
+import os
 import sys
 import json
+import struct
+import time
 import base58
 from pathlib import Path
 from typing import List, Optional
@@ -30,6 +33,7 @@ try:
     from solders.keypair import Keypair
     from solders.pubkey import Pubkey
     from solders.system_program import transfer, TransferParams
+    from solders.instruction import Instruction
     from solders.message import MessageV0
     from solders.transaction import VersionedTransaction
 except ImportError:
@@ -44,6 +48,29 @@ WALLETS_FILE = Path(__file__).parent / "wallets.json"
 
 # Mainnet -- real network. For testing use: https://api.devnet.solana.com
 RPC_URL = "https://api.mainnet-beta.solana.com"
+
+# Compute Budget program ID (constant, will never change)
+COMPUTE_BUDGET_PROGRAM_ID = Pubkey.from_string("ComputeBudget111111111111111111111111111111")
+
+# SOL reserved per transaction to cover the base signature fee (5000 lamports)
+# plus headroom for the priority fee added below.
+FEE_BUFFER_SOL: float = 0.000_010  # 10 000 lamports — safe upper bound
+
+
+# ------------------------------------------------------------------
+# Compute Budget helpers (no external package required)
+# ------------------------------------------------------------------
+
+def _set_compute_unit_limit(units: int) -> Instruction:
+    """Build a SetComputeUnitLimit instruction (discriminant byte = 2)."""
+    data = bytes([2]) + struct.pack("<I", units)
+    return Instruction(program_id=COMPUTE_BUDGET_PROGRAM_ID, accounts=[], data=data)
+
+
+def _set_compute_unit_price(micro_lamports: int) -> Instruction:
+    """Build a SetComputeUnitPrice instruction (discriminant byte = 3)."""
+    data = bytes([3]) + struct.pack("<Q", micro_lamports)
+    return Instruction(program_id=COMPUTE_BUDGET_PROGRAM_ID, accounts=[], data=data)
 
 
 # ==================== WALLET MANAGER ====================
@@ -70,8 +97,12 @@ class SolanaWalletManager:
             self.wallets = []
 
     def _save_wallets(self):
-        with open(self.wallets_file, "w") as f:
+        # Write to a temp file first, then atomically replace the target.
+        # This prevents data loss if the process is killed mid-write.
+        tmp = self.wallets_file.with_suffix(".tmp")
+        with open(tmp, "w") as f:
             json.dump(self.wallets, f, indent=2)
+        os.replace(tmp, self.wallets_file)
 
     # ------------------------------------------------------------------
     # Wallet generation
@@ -193,12 +224,29 @@ class SolanaWalletManager:
         secret_bytes = base58.b58decode(w["private_key"])
         return Keypair.from_bytes(secret_bytes)
 
+    def _wait_for_confirmation(self, signature, max_retries: int = 40) -> bool:
+        """
+        Poll get_signature_statuses until the transaction is confirmed or
+        the timeout is reached (~40 s).  Raises on an on-chain execution error.
+        """
+        for _ in range(max_retries):
+            time.sleep(1)
+            resp = self.client.get_signature_statuses([signature])
+            status = resp.value[0]
+            if status is not None:
+                if status.err:
+                    raise Exception(f"Transaction failed on-chain: {status.err}")
+                return True  # any non-None, non-error status means it landed
+        return False  # confirmation timeout — tx may still land eventually
+
     def send_from_wallet(
         self, wallet_index: int, recipient: str, amount_sol: float
     ) -> Optional[str]:
         """
         Send SOL from a single wallet to a recipient address.
-        Returns the transaction signature, or None on failure.
+        Adds a priority fee (1 000 µL/CU) to improve landing during congestion.
+        Polls for confirmation before returning.
+        Returns the transaction signature string, or None on failure.
         """
         try:
             sender_kp = self._get_keypair(wallet_index)
@@ -208,27 +256,39 @@ class SolanaWalletManager:
             latest = self.client.get_latest_blockhash()
             recent_blockhash = latest.value.blockhash
 
-            instruction = transfer(
-                TransferParams(
-                    from_pubkey=sender_kp.pubkey(),
-                    to_pubkey=recipient_pk,
-                    lamports=amount_lamports,
-                )
-            )
+            # A simple SOL transfer consumes ~300 CUs; cap at 200 000 to be safe.
+            # Priority fee: 1 000 micro-lamports/CU → ~0.2 lamports extra total.
+            instructions = [
+                _set_compute_unit_limit(200_000),
+                _set_compute_unit_price(1_000),
+                transfer(
+                    TransferParams(
+                        from_pubkey=sender_kp.pubkey(),
+                        to_pubkey=recipient_pk,
+                        lamports=amount_lamports,
+                    )
+                ),
+            ]
 
             message = MessageV0.try_compile(
                 payer=sender_kp.pubkey(),
-                instructions=[instruction],
+                instructions=instructions,
                 address_lookup_table_accounts=[],
                 recent_blockhash=recent_blockhash,
             )
 
             tx = VersionedTransaction(message, [sender_kp])
             sig_resp = self.client.send_transaction(tx)
-            signature = str(sig_resp.value)
+            signature = sig_resp.value  # solders Signature object
 
-            print(f"  OK  #{wallet_index} -> {signature[:30]}...")
-            return signature
+            confirmed = self._wait_for_confirmation(signature)
+            sig_str = str(signature)
+
+            if confirmed:
+                print(f"  OK  #{wallet_index} -> {sig_str[:30]}...")
+            else:
+                print(f"  TIMEOUT #{wallet_index} -> {sig_str[:30]}... (may still land)")
+            return sig_str
 
         except Exception as e:
             print(f"  FAIL #{wallet_index}: {e}")
@@ -258,8 +318,9 @@ class SolanaWalletManager:
         for wallet in self.wallets:
             idx = wallet["index"]
             bal = wallet["balance"]
-            if bal < amount_sol:
-                print(f"  #{idx}: balance {bal:.6f} < {amount_sol} SOL -- skipping")
+            required = amount_sol + FEE_BUFFER_SOL
+            if bal < required:
+                print(f"  #{idx}: balance {bal:.6f} < {required:.6f} SOL (amount + fees) -- skipping")
                 signatures.append(None)
                 continue
             sig = self.send_from_wallet(idx, recipient, amount_sol)
@@ -301,8 +362,9 @@ class SolanaWalletManager:
         signatures = []
         for idx in valid:
             bal = self.wallets[idx - 1]["balance"]
-            if bal < amount_sol:
-                print(f"  #{idx}: balance {bal:.6f} < {amount_sol} SOL -- skipping")
+            required = amount_sol + FEE_BUFFER_SOL
+            if bal < required:
+                print(f"  #{idx}: balance {bal:.6f} < {required:.6f} SOL (amount + fees) -- skipping")
                 signatures.append(None)
                 continue
             sig = self.send_from_wallet(idx, recipient, amount_sol)

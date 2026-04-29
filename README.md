@@ -143,6 +143,7 @@ python solana_wallets_creator.py export
 - Add `wallets.json` and `wallets.export.json` to `.gitignore` — never commit private keys to a repository.
 - The private key displayed by `show_key` is in **base58 format**, compatible with Phantom, Solflare, and other Solana wallets.
 - By default the tool connects to **Mainnet**. Switch to Devnet for testing with `rpc devnet`.
+- `wallets.json` is written atomically (temp file → rename) — a crash during save will never corrupt your wallet data.
 
 ---
 
@@ -163,3 +164,13 @@ wallets.json                # Auto-generated wallet storage (add to .gitignore)
 - `solders` — Rust-backed Solana types
 - `base58` — key encoding
 - `mcp` *(optional)* — for AI agent integration
+
+---
+
+## Changelog
+
+### v1.1.0 — 2026-04-29
+- **Transaction confirmation** — `send_from_wallet` now polls `get_signature_statuses` for up to 40 s after broadcast. A returned signature no longer means success; the code waits for actual on-chain confirmation and raises if the transaction is rejected by the runtime.
+- **Priority fees** — every transaction now includes `SetComputeUnitLimit(200 000)` + `SetComputeUnitPrice(1 000 µL/CU)` Compute Budget instructions. This keeps transactions competitive during network congestion at a negligible cost (~0.0003 extra lamports per transfer).
+- **Fee buffer in balance check** — pre-send balance validation now reserves 10 000 lamports (0.00001 SOL) on top of the requested amount to cover the base signature fee and priority fee, preventing predictable "insufficient lamports for fees" failures.
+- **Atomic wallet file write** — `wallets.json` is now written to a `.tmp` file and then atomically renamed with `os.replace()`. A crash or power loss during a save can no longer produce a corrupted or empty wallet file.
