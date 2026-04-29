@@ -12,6 +12,7 @@ Everything happens directly between your machine and the Solana blockchain.
 
 - **AI agent integration** — plug directly into Claude Code or OpenClaw via MCP and control everything through natural language chat
 - **Bulk wallet generation** — create any number of Solana wallets instantly
+- **Wallet import** — import any existing wallet by pasting its base58 private key (Phantom export format supported)
 - **Live balance display** — fetch real-time SOL balances for all wallets at once
 - **View private keys** — display any wallet's private key for import into Phantom, Solflare, etc.
 - **Bulk send** — send SOL from all wallets or a selected subset in one command
@@ -28,6 +29,7 @@ The included `solana_mcp.py` turns this tool into an **MCP server** that any com
 Once connected, you can simply type in the chat:
 
 > *"Create 10 wallets"*
+> *"Import this wallet: 5F5Dqtt...nxHtn"*
 > *"What's the balance on wallet 3?"*
 > *"Send 0.01 SOL from all wallets to address ABC..."*
 > *"Send 0.05 SOL from wallets 1, 3, and 5 to address XYZ..."*
@@ -89,6 +91,7 @@ python solana_wallets_creator.py
 
 ```
 solana> create 10
+solana> import 5F5Dqtt...nxHtn
 solana> list
 solana> show_key 3
 solana> send_all ADDRESS 0.01
@@ -118,6 +121,7 @@ python solana_wallets_creator.py export
 | Command | Description |
 |---|---|
 | `create <N>` | Generate N new Solana wallets |
+| `import <private_key>` | Import existing wallet from base58 private key |
 | `list` | Show all wallets with live balances |
 | `balance <pubkey>` | Check balance of any Solana address |
 | `show_key <N>` | Show public + private key of wallet #N |
