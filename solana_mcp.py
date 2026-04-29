@@ -252,5 +252,53 @@ def export_wallets(filepath: str = "") -> str:
     return _cap(mgr().export_wallets, filepath if filepath else None)
 
 
+@mcp.tool()
+def get_transaction_info(signature: str) -> str:
+    """
+    Get the on-chain status and Solscan link for any transaction signature.
+    Use this when the user asks about a transaction, wants to check if it
+    landed, or asks for a Solscan link.
+    signature: base58 transaction signature (88 characters).
+    """
+    info = mgr().get_tx_status(signature)
+    lines = [
+        f"Transaction : {signature}",
+        f"Status      : {info['status']}",
+    ]
+    if info["err"]:
+        lines.append(f"Error       : {info['err']}")
+    if info["link"]:
+        lines.append(f"Solscan     : {info['link']}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def get_last_transaction(wallet_index: int) -> str:
+    """
+    Get the Solscan link and on-chain status of the last transaction sent
+    from a specific wallet. Use this when the user asks to check a recent
+    transfer or get a link to the last transaction of a wallet.
+    wallet_index: wallet number (starting from 1).
+    """
+    wallets = mgr().wallets
+    if wallet_index < 1 or wallet_index > len(wallets):
+        return f"Error: index {wallet_index} is out of range 1..{len(wallets)}"
+    w = wallets[wallet_index - 1]
+    sig = w.get("last_tx")
+    if not sig:
+        return f"Wallet #{wallet_index} has no recorded transactions yet."
+    info = mgr().get_tx_status(sig)
+    lines = [
+        f"Wallet #{wallet_index} — last transaction",
+        f"Signature   : {sig}",
+        f"Status      : {info['status']}",
+    ]
+    if info["err"]:
+        lines.append(f"Error       : {info['err']}")
+    if info["link"]:
+        lines.append(f"Solscan     : {info['link']}")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     mcp.run()

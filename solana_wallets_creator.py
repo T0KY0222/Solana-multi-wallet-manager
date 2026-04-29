@@ -32,6 +32,7 @@ try:
     from solana.rpc.api import Client
     from solders.keypair import Keypair
     from solders.pubkey import Pubkey
+    from solders.signature import Signature as SoldersSignature
     from solders.system_program import transfer, TransferParams
     from solders.instruction import Instruction
     from solders.message import MessageV0
@@ -55,6 +56,16 @@ COMPUTE_BUDGET_PROGRAM_ID = Pubkey.from_string("ComputeBudget1111111111111111111
 # SOL reserved per transaction to cover the base signature fee (5000 lamports)
 # plus headroom for the priority fee added below.
 FEE_BUFFER_SOL: float = 0.000_010  # 10 000 lamports — safe upper bound
+
+
+# ------------------------------------------------------------------
+# Solscan helpers
+# ------------------------------------------------------------------
+
+def solscan_link(signature: str, rpc_url: str) -> str:
+    """Return the Solscan URL for a transaction signature."""
+    cluster = "?cluster=devnet" if "devnet" in rpc_url else ""
+    return f"https://solscan.io/tx/{signature}{cluster}"
 
 
 # ------------------------------------------------------------------
@@ -284,10 +295,17 @@ class SolanaWalletManager:
             confirmed = self._wait_for_confirmation(signature)
             sig_str = str(signature)
 
+            # Persist last tx so the user can look it up later
+            self.wallets[wallet_index - 1]["last_tx"] = sig_str
+            self._save_wallets()
+
+            link = solscan_link(sig_str, self.rpc_url)
             if confirmed:
                 print(f"  OK  #{wallet_index} -> {sig_str[:30]}...")
+                print(f"       Solscan: {link}")
             else:
                 print(f"  TIMEOUT #{wallet_index} -> {sig_str[:30]}... (may still land)")
+                print(f"       Solscan: {link}")
             return sig_str
 
         except Exception as e:
@@ -422,6 +440,59 @@ class SolanaWalletManager:
         return signatures
 
     # ------------------------------------------------------------------
+    # Transaction lookup
+    # ------------------------------------------------------------------
+
+    def get_tx_status(self, signature_str: str) -> dict:
+        """
+        Fetch the on-chain status of any transaction by its base58 signature.
+        Returns a dict: {status, err, link}.
+        """
+        link = solscan_link(signature_str, self.rpc_url)
+        try:
+            sig = SoldersSignature.from_string(signature_str)
+        except Exception:
+            return {"status": "invalid_signature", "err": "Not a valid base58 signature", "link": ""}
+
+        try:
+            resp = self.client.get_signature_statuses([sig], search_transaction_history=True)
+            val = resp.value[0]
+        except Exception as e:
+            return {"status": "rpc_error", "err": str(e), "link": link}
+
+        if val is None:
+            return {"status": "not found (too old or never broadcast)", "err": None, "link": link}
+
+        if val.err:
+            return {"status": "failed", "err": str(val.err), "link": link}
+
+        conf = str(val.confirmation_status).split(".")[-1].lower() if val.confirmation_status else "processed"
+        return {"status": conf, "err": None, "link": link}
+
+    def show_tx(self, signature_str: str):
+        """Print status and Solscan link for a transaction signature."""
+        info = self.get_tx_status(signature_str)
+        print(f"\nTransaction : {signature_str}")
+        print(f"  Status    : {info['status']}")
+        if info["err"]:
+            print(f"  Error     : {info['err']}")
+        if info["link"]:
+            print(f"  Solscan   : {info['link']}")
+        print()
+
+    def get_last_tx(self, wallet_index: int):
+        """Show the last transaction sent from wallet #N."""
+        if wallet_index < 1 or wallet_index > len(self.wallets):
+            print(f"Invalid index. Available: 1..{len(self.wallets)}")
+            return
+        w = self.wallets[wallet_index - 1]
+        sig = w.get("last_tx")
+        if not sig:
+            print(f"  Wallet #{wallet_index} has no recorded transactions yet.")
+            return
+        self.show_tx(sig)
+
+    # ------------------------------------------------------------------
     # Export / Delete
     # ------------------------------------------------------------------
 
@@ -507,6 +578,8 @@ def print_usage():
   send_selected <addr> <amt> <1,2,3>
                                 Send from selected wallets
   send_manual <addr>            Enter amount per wallet manually
+  tx <signature>                Check status + Solscan link for any tx
+  last_tx <N>                   Check last tx of wallet #N
   export [filepath]             Export to JSON
   delete_all                    Delete all wallets
   rpc <url|devnet|mainnet>      Switch RPC endpoint
@@ -517,7 +590,8 @@ def print_usage():
     create 5
     send_all 3Xk...abc 0.01
     send_selected 3Xk...abc 0.05 1,3,5
-    show_key 2
+    tx 5UfD...Kq2Z
+    last_tx 3
     rpc mainnet
 =================================================================
 """)
@@ -615,6 +689,21 @@ def interactive_mode(manager: SolanaWalletManager):
                 continue
             manager.send_manual_wallets(parts[1])
 
+        elif action == "tx":
+            if len(parts) < 2:
+                print("Usage: tx <signature>")
+                continue
+            manager.show_tx(parts[1])
+
+        elif action == "last_tx":
+            if len(parts) < 2:
+                print("Usage: last_tx <N>")
+                continue
+            try:
+                manager.get_last_tx(int(parts[1]))
+            except ValueError:
+                print("Please enter a wallet number.")
+
         elif action == "export":
             filepath = parts[1] if len(parts) > 1 else None
             manager.export_wallets(filepath)
@@ -667,6 +756,10 @@ def main():
             manager.send_selected_wallets(args[1], float(args[2]), indices)
         elif action == "send_manual":
             manager.send_manual_wallets(args[1])
+        elif action == "tx":
+            manager.show_tx(args[1])
+        elif action == "last_tx":
+            manager.get_last_tx(int(args[1]))
         elif action == "export":
             manager.export_wallets(args[1] if len(args) > 1 else None)
         elif action == "help":
