@@ -165,6 +165,23 @@ def show_all_private_keys() -> str:
 
 
 @mcp.tool()
+def import_wallet(private_key: str) -> str:
+    """
+    Import an existing Solana wallet using its base58 private key.
+    Supports both 64-byte full keypairs and 32-byte seeds.
+    The imported wallet is added to the local wallet list.
+    private_key: base58 encoded private key (e.g. from Phantom export).
+    """
+    result = mgr().import_wallet(private_key)
+    if result:
+        return (
+            f"Wallet imported as #{result['index']}\n"
+            f"  Public key : {result['public_key']}"
+        )
+    return "Import failed. Check the private key and try again."
+
+
+@mcp.tool()
 def send_sol_all_wallets(recipient_address: str, amount_sol_per_wallet: float) -> str:
     """
     Send the same amount of SOL from ALL wallets to a single address.

@@ -363,6 +363,49 @@ class SolanaWalletManager:
     # Export / Delete
     # ------------------------------------------------------------------
 
+    def import_wallet(self, private_key_b58: str) -> Optional[dict]:
+        """
+        Import a wallet from a base58 private key (88-char format from Phantom etc).
+        Both 64-byte full keypairs and 32-byte seeds are supported.
+        """
+        try:
+            raw = base58.b58decode(private_key_b58)
+        except Exception:
+            print("Error: invalid base58 string.")
+            return None
+
+        try:
+            if len(raw) == 64:
+                keypair = Keypair.from_bytes(raw)
+            elif len(raw) == 32:
+                keypair = Keypair.from_seed(raw)
+            else:
+                print(f"Error: unexpected key length ({len(raw)} bytes). Expected 32 or 64.")
+                return None
+        except Exception as e:
+            print(f"Error loading keypair: {e}")
+            return None
+
+        pubkey = str(keypair.pubkey())
+
+        # Check for duplicates
+        for w in self.wallets:
+            if w["public_key"] == pubkey:
+                print(f"Wallet already exists as #{w['index']}: {pubkey}")
+                return None
+
+        wallet_info = {
+            "index": len(self.wallets) + 1,
+            "public_key": pubkey,
+            "private_key": base58.b58encode(bytes(keypair)).decode(),
+            "balance": 0.0,
+        }
+        self.wallets.append(wallet_info)
+        self._save_wallets()
+
+        print(f"Wallet imported as #{wallet_info['index']}: {pubkey}")
+        return wallet_info
+
     def export_wallets(self, filepath: Optional[str] = None):
         """Export all wallets to a JSON file."""
         path = Path(filepath) if filepath else WALLETS_FILE.with_suffix(".export.json")
@@ -393,6 +436,7 @@ def print_usage():
   Commands:
 
   create <N>                    Generate N wallets
+  import <private_key>          Import wallet from base58 private key
   list                          Show wallets + balances
   balance <pubkey>              Check any external address
   show_key <N>                  Show keys of wallet #N
@@ -478,6 +522,12 @@ def interactive_mode(manager: SolanaWalletManager):
         elif action == "show_all_keys":
             manager.show_all_keys()
 
+        elif action == "import":
+            if len(parts) < 2:
+                print("Usage: import <private_key>")
+                continue
+            manager.import_wallet(parts[1])
+
         elif action == "send_all":
             if len(parts) < 3:
                 print("Usage: send_all <recipient> <amount>")
@@ -546,6 +596,8 @@ def main():
             manager.show_key(int(args[1]))
         elif action == "show_all_keys":
             manager.show_all_keys()
+        elif action == "import":
+            manager.import_wallet(args[1])
         elif action == "send_all":
             manager.send_all_wallets(args[1], float(args[2]))
         elif action == "send_selected":
