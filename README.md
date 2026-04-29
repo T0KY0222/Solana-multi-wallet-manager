@@ -81,11 +81,23 @@ pip install solana solders base58
 
 ---
 
-## Custom RPC (recommended)
+## Custom RPC (strongly recommended)
 
-By default the tool uses the public Solana mainnet RPC (`api.mainnet-beta.solana.com`), which is rate-limited and may return stale balances.
+The public Solana RPC (`api.mainnet-beta.solana.com`) is **heavily rate-limited** — balance checks will often fail or return 0 under normal load. Use a free private RPC instead.
 
-To use your own RPC (Helius, QuickNode, Alchemy, etc.), create a **`config.json`** file in the project folder:
+### Step 1 — Get a free RPC
+
+Sign up at one of these providers (free tier is enough):
+
+| Provider | Free plan | URL |
+|---|---|---|
+| [Helius](https://dashboard.helius.dev) | 100k requests/day | `https://mainnet.helius-rpc.com/?api-key=YOUR_KEY` |
+| [QuickNode](https://www.quicknode.com) | 10M credits/month | custom URL from dashboard |
+| [Alchemy](https://alchemy.com) | 300M compute units/month | custom URL from dashboard |
+
+### Step 2 — Create `config.json`
+
+Create a file named **`config.json`** in the same folder as `solana_wallets_creator.py`:
 
 ```json
 {
@@ -93,13 +105,22 @@ To use your own RPC (Helius, QuickNode, Alchemy, etc.), create a **`config.json`
 }
 ```
 
-`config.json` is listed in `.gitignore` and will **never be committed** — your API key stays local.
+This file is in `.gitignore` and will **never be committed** to git — your API key stays local.
 
-You can also switch the RPC at runtime without editing any file:
+### Step 3 — Restart the MCP server
+
+After creating `config.json`, restart Claude Desktop (or your agent). In the debug logs you will see:
+```
+[config] RPC loaded from config.json: https://mainnet.helius-rpc.com/...
+```
+If you see `using public RPC (rate-limited)` instead — the file path or JSON format is wrong.
+
+### Switch RPC at runtime (no restart needed)
+
 ```
 solana> rpc https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
 ```
-Or via the AI agent: *"Switch to RPC https://..."*
+Or tell the AI agent: *"Switch to RPC https://..."*
 
 ---
 

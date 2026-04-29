@@ -111,12 +111,16 @@ def get_wallet_balance(wallet_index: int) -> str:
     try:
         bal = mgr().get_balance(w["public_key"])
     except RuntimeError as e:
+        active_rpc = mgr().rpc_url
         return (
             f"Wallet #{wallet_index}\n"
-            f"  Address : {w['public_key']}\n"
-            f"  Balance : ERROR — {e}\n"
-            f"  Tip: the public mainnet RPC is rate-limited. "
-            f"Try again in a few seconds or switch to a private RPC with: switch_network(<url>)"
+            f"  Address    : {w['public_key']}\n"
+            f"  Balance    : ERROR\n"
+            f"  Reason     : {e}\n"
+            f"  Active RPC : {active_rpc}\n"
+            f"  Tip: if the Active RPC is api.mainnet-beta.solana.com, it is "
+            f"rate-limited. Create config.json in the project folder with your "
+            f"private RPC key and restart the MCP server."
         )
     return (
         f"Wallet #{wallet_index}\n"

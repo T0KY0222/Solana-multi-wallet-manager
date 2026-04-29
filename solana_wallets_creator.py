@@ -59,9 +59,11 @@ def _load_rpc_url() -> str:
             data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
             url = data.get("rpc_url", "").strip()
             if url:
+                print(f"[config] RPC loaded from config.json: {url}", file=sys.stderr)
                 return url
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[config] Failed to read config.json: {e}", file=sys.stderr)
+    print(f"[config] config.json not found — using public RPC (rate-limited)", file=sys.stderr)
     return _DEFAULT_RPC
 
 RPC_URL = _load_rpc_url()
