@@ -152,21 +152,39 @@ class SolanaWalletManager:
     def get_balance(self, pubkey_str: str) -> float:
         """Return SOL balance for a public key. Returns 0.0 on error."""
         try:
-            pubkey = Pubkey.from_string(pubkey_str)
-            resp = self.client.get_balance(pubkey)
-            if resp.value is None:
-                return 0.0
-            return resp.value / 1_000_000_000
-        except Exception as e:
-            print(f"  Balance error {pubkey_str[:20]}...: {repr(e)}")
-            return 0.0
+    def get_balance(self, pubkey_str: str, retries: int = 3) -> float:
+        """
+        Return SOL balance for a public key.
+        Retries up to `retries` times with exponential back-off on RPC errors.
+        Raises RuntimeError if all attempts fail so callers can surface the
+        real error instead of silently reporting 0.
+        """
+        pubkey = Pubkey.from_string(pubkey_str)
+        last_exc: Exception = RuntimeError("no attempts made")
+        for attempt in range(retries):
+            try:
+                resp = self.client.get_balance(pubkey)
+                if resp.value is None:
+                    return 0.0
+                return resp.value / 1_000_000_000
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)  # 1 s, 2 s
+        raise RuntimeError(
+            f"RPC get_balance failed after {retries} attempts: {last_exc}"
+        )
 
     def update_all_balances(self):
         """Fetch and update balances for all wallets from the blockchain."""
         print("\nFetching balances...")
         for wallet in self.wallets:
-            bal = self.get_balance(wallet["public_key"])
-            wallet["balance"] = bal
+            try:
+                bal = self.get_balance(wallet["public_key"])
+                wallet["balance"] = bal
+            except RuntimeError as e:
+                print(f"  #{wallet['index']} balance error: {e}")
+                # Keep previous cached value — don't overwrite with 0
         self._save_wallets()
 
     def list_wallets(self):
@@ -195,8 +213,11 @@ class SolanaWalletManager:
 
     def check_external_balance(self, pubkey_str: str):
         """Check the balance of any Solana address."""
-        bal = self.get_balance(pubkey_str)
-        print(f"\nBalance of {pubkey_str[:20]}... = {bal:.6f} SOL")
+        try:
+            bal = self.get_balance(pubkey_str)
+            print(f"\nBalance of {pubkey_str[:20]}... = {bal:.6f} SOL")
+        except RuntimeError as e:
+            print(f"\nCould not fetch balance: {e}")
 
     def show_key(self, wallet_index: int):
         """Display the public and private key of a specific wallet."""

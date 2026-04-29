@@ -108,7 +108,16 @@ def get_wallet_balance(wallet_index: int) -> str:
     if wallet_index < 1 or wallet_index > len(wallets):
         return f"Error: index {wallet_index} is out of range 1..{len(wallets)}"
     w = wallets[wallet_index - 1]
-    bal = mgr().get_balance(w["public_key"])
+    try:
+        bal = mgr().get_balance(w["public_key"])
+    except RuntimeError as e:
+        return (
+            f"Wallet #{wallet_index}\n"
+            f"  Address : {w['public_key']}\n"
+            f"  Balance : ERROR — {e}\n"
+            f"  Tip: the public mainnet RPC is rate-limited. "
+            f"Try again in a few seconds or switch to a private RPC with: switch_network(<url>)"
+        )
     return (
         f"Wallet #{wallet_index}\n"
         f"  Address : {w['public_key']}\n"
@@ -122,7 +131,10 @@ def check_address_balance(address: str) -> str:
     Check the balance of any Solana address (not limited to stored wallets).
     address: base58 public key.
     """
-    bal = mgr().get_balance(address)
+    try:
+        bal = mgr().get_balance(address)
+    except RuntimeError as e:
+        return f"Address : {address}\nBalance : ERROR — {e}"
     return f"Address : {address}\nBalance : {bal:.6f} SOL"
 
 
